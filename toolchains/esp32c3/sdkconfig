@@ -188,15 +188,6 @@ CONFIG_APPTRACE_LOCK_ENABLE=y
 # end of Bluetooth
 
 #
-# CoAP Configuration
-#
-CONFIG_COAP_MBEDTLS_PSK=y
-# CONFIG_COAP_MBEDTLS_PKI is not set
-# CONFIG_COAP_MBEDTLS_DEBUG is not set
-CONFIG_COAP_LOG_DEFAULT_LEVEL=0
-# end of CoAP Configuration
-
-#
 # Driver configurations
 #
 

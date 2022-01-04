@@ -2,5 +2,5 @@
 	path = third_party/esp-idf
 	#url = https://github.com/toitware/esp-idf.git
 	url = https://github.com/espressif/esp-idf.git
-	branch = release/v4.4
-	#ignore = untracked
+	branch = origin/release/v4.4
+	ignore = untracked
