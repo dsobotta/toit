@@ -54,6 +54,7 @@ include_directories(
   $ENV{IDF_PATH}/components/esp_eth/include
   $ENV{IDF_PATH}/components/esp_event/include
   $ENV{IDF_PATH}/components/esp_hw_support/include
+  $ENV{IDF_PATH}/components/esp_hw_support/include/soc
   $ENV{IDF_PATH}/components/esp_netif/include
   $ENV{IDF_PATH}/components/esp_ringbuf/include
   $ENV{IDF_PATH}/components/esp_rom/include
@@ -63,7 +64,9 @@ include_directories(
   $ENV{IDF_PATH}/components/freertos/include
   $ENV{IDF_PATH}/components/freertos/xtensa/include
   $ENV{IDF_PATH}/components/freertos/port/xtensa/include
-  
+  $ENV{IDF_PATH}/components/freertos/include/esp_additions
+  $ENV{IDF_PATH}/components/freertos/include/esp_additions/freertos
+
   $ENV{IDF_PATH}/components/hal/include
   $ENV{IDF_PATH}/components/hal/esp32c3/include
   

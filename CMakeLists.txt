@@ -24,7 +24,7 @@ if ("${TOIT_GIT_VERSION}" STREQUAL "")
   include(tools/gitversion.cmake)
   # The Git version is only computed when cmake generates the Ninja files, but
   # that should be good enough.
-  compute_git_version(TOIT_GIT_VERSION)
+  #compute_git_version(TOIT_GIT_VERSION)
 endif()
 
 set(TOIT_SDK_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR})

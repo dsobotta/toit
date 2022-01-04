@@ -12,6 +12,7 @@ add_prebuilt_library(vm "libtoit_vm.a"
 	app_update
 	bootloader_support
 	bt
+	coap
 	esp_adc_cal
 	esp_common
 	esp_eth

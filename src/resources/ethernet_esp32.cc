@@ -73,7 +73,7 @@ class EthernetResourceGroup : public ResourceGroup {
   ~EthernetResourceGroup() {
     ESP_ERROR_CHECK(esp_eth_stop(_eth_handle));
     ESP_ERROR_CHECK(esp_eth_clear_default_handlers(_eth_handle));
-    ESP_ERROR_CHECK(esp_eth_del_netif_glue(_netif_glue));
+    ESP_ERROR_CHECK(esp_eth_del_netif_glue(reinterpret_cast<esp_eth_netif_glue_handle_t>(_netif_glue)));
     ESP_ERROR_CHECK(esp_eth_driver_uninstall(_eth_handle));
     esp_netif_destroy(_netif);
     ethernet_pool.put(_id);
@@ -148,7 +148,10 @@ uint32_t EthernetResourceGroup::on_event(Resource* resource, word data, uint32_t
         break;
 
       default:
+#ifndef CONFIG_IDF_TARGET_ESP32C3
         ets_printf("unhandled Ethernet event: %d\n", system_event->id);
+#endif
+	break;
     }
   } else if (system_event->base == IP_EVENT) {
     switch (system_event->id) {
@@ -160,7 +163,10 @@ uint32_t EthernetResourceGroup::on_event(Resource* resource, word data, uint32_t
       }
 
       default:
+#ifndef CONFIG_IDF_TARGET_ESP32C3
         ets_printf("unhandled Ethernet event: %d\n", system_event->id);
+#endif
+	break;
     }
   } else {
     FATAL("unhandled event: %d\n", system_event->base);
@@ -302,6 +308,8 @@ PRIMITIVE(init_spi) {
   esp_eth_mac_t* mac = null;
   esp_eth_phy_t* phy = null;
   switch (mac_chip) {
+    //TODO: ESP32-C3 Support
+    /*
     case MAC_CHIP_W5500: {
       eth_w5500_config_t w5500_config = ETH_W5500_DEFAULT_CONFIG(spi_device->handle());
       w5500_config.int_gpio_num = int_num;
@@ -309,6 +317,9 @@ PRIMITIVE(init_spi) {
       phy = esp_eth_phy_new_w5500(&phy_config);
       break;
     }
+    */
+    default:
+      break;
   }
   if (!phy || !mac) {
     ethernet_pool.put(id);
@@ -345,7 +356,7 @@ PRIMITIVE(init_spi) {
   if (!resource_group) {
     ethernet_pool.put(id);
     esp_netif_destroy(netif);
-    ESP_ERROR_CHECK(esp_eth_del_netif_glue(netif_glue));
+    ESP_ERROR_CHECK(esp_eth_del_netif_glue(reinterpret_cast<esp_eth_netif_glue_handle_t>(netif_glue)));
     ESP_ERROR_CHECK(esp_eth_driver_uninstall(eth_handle));
     MALLOC_FAILED;
   }

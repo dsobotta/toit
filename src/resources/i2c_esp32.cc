@@ -33,8 +33,10 @@ const int kI2CTransactionTimeout = 10;
 const i2c_port_t kInvalidPort = i2c_port_t(-1);
 
 ResourcePool<i2c_port_t, kInvalidPort> i2c_ports(
-  I2C_NUM_0,
-  I2C_NUM_1
+  I2C_NUM_0
+#ifndef CONFIG_IDF_TARGET_ESP32C3
+  , I2C_NUM_1
+#endif
 );
 
 class I2CResourceGroup : public ResourceGroup {

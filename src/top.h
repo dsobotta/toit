@@ -67,17 +67,19 @@
 //  TOIT_LINUX    : Ubuntu etc.
 
 #if defined(__FREERTOS__)
-#define TOIT_FREERTOS
-#define TOIT_CMPCTMALLOC
+  #define TOIT_FREERTOS
+  #if !defined(CONFIG_IDF_TARGET_ESP32C3)
+    #define TOIT_CMPCTMALLOC
+  #endif
 #elif defined(__APPLE__)
-#define TOIT_DARWIN
-#define TOIT_BSD
-#define TOIT_POSIX
+  #define TOIT_DARWIN
+  #define TOIT_BSD
+  #define TOIT_POSIX
 #elif defined(WIN32)
-#define TOIT_WINDOWS
+  #define TOIT_WINDOWS
 #else
-#define TOIT_LINUX
-#define TOIT_POSIX
+  #define TOIT_LINUX
+  #define TOIT_POSIX
 #endif
 
 #if defined(TOIT_DARWIN) + defined(TOIT_LINUX) + defined(TOIT_WINDOWS) + defined(TOIT_FREERTOS) > 1
