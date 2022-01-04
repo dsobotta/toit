@@ -73,7 +73,11 @@ static RTC_NOINIT_ATTR RTCData rtc;
 static RTC_NOINIT_ATTR uint32 rtc_checksum;
 static bool reset_after_boot = false;
 
-extern "C" void start_cpu0_default(void) IRAM_ATTR __attribute__((noreturn));
+#ifdef CONFIG_IDF_TARGET_ESP32C3
+  extern "C" void start_cpu0(void) IRAM_ATTR __attribute__((noreturn));
+#else
+  extern "C" void start_cpu0_default(void) IRAM_ATTR __attribute__((noreturn));
+#endif
 
 extern int _rtc_bss_start;
 extern int _rtc_bss_end;
@@ -142,7 +146,13 @@ extern "C" void IRAM_ATTR start_cpu0() {
   update_rtc_checksum();
 
   // Invoke the default entrypoint that launches FreeRTOS and the real application.
+ 
+#ifdef CONFIG_IDF_TARGET_ESP32C3
+  start_cpu0();
+#else
   start_cpu0_default();
+#endif
+
 }
 
 namespace toit {
