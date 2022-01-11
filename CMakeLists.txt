@@ -17,6 +17,18 @@ cmake_minimum_required(VERSION 3.19.0)
 
 project(toit)
 
+set(TOIT_IS_CROSS FALSE)
+if ((NOT "${CMAKE_SYSTEM_NAME}" STREQUAL "${CMAKE_HOST_SYSTEM_NAME}") OR
+    (NOT "${CMAKE_SYSTEM_PROCESSOR}" STREQUAL "${CMAKE_HOST_SYSTEM_PROCESSOR}"))
+  # For '-m32' builds we don't enter here, as the system and processor are still the same. The
+  # '-m32' is just a flag to the compiler.
+  # This turns out to work out fine, as we can run the 32-bit executables anyway and don't
+  # need a different host build to compile the snapshots.
+  set(TOIT_IS_CROSS TRUE)
+endif()
+
+string(TIMESTAMP BUILD_DATE "%Y-%m-%dT%H:%M:%SZ" UTC)
+
 # When using the downloadable sources there is no Git, so the version has
 # to be given as argument.
 set(TOIT_GIT_VERSION "$ENV{TOIT_GIT_VERSION}")
@@ -91,10 +103,14 @@ if (DEFINED USE_LWIP)
 endif()
 
 # Set the output buffer size to 3700, reduced from 16k.  This is small enough
-# that the allocation from MbedTLS is < 4k, 4033bytes to be precise.  We can
-# also change the input buffer length, but this requires that all communication
-# partners support the TLS protocol extension to tell them about this.
-set(MBEDTLS_C_FLAGS "-DMBEDTLS_SSL_IN_CONTENT_LEN=4608 -DMBEDTLS_SSL_OUT_CONTENT_LEN=3700 -DMBEDTLS_PLATFORM_MEMORY=1")
+# that the allocation from MbedTLS is < 4k, 4033bytes to be precise.  We set
+# the input buffer length to 6k because some sites have very large certificates
+# (eg Telegram, over 5100 bytes) and this is not something we can control.
+# There are some protocol extensions for telling the other side about our buffer
+# sizes, but they just cause the other side to fragment packets more agressively.
+# At this end we still have to reassemble the packets in and unfragmented form
+# that fits in the buffer size below.
+set(MBEDTLS_C_FLAGS "-DMBEDTLS_SSL_IN_CONTENT_LEN=6000 -DMBEDTLS_SSL_OUT_CONTENT_LEN=3700 -DMBEDTLS_PLATFORM_MEMORY=1")
 
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${TOIT_GENERIC_FLAGS} ${TOIT_LWIP_C_FLAGS} ${MBEDTLS_C_FLAGS}")
 set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -DDEBUG")
@@ -114,17 +130,48 @@ else ()
     set(TOIT_LINK_GROUP_END_FLAGS "-Wl,--no-whole-archive")
 endif()
 
-add_custom_target(
-  build_toitlsp
-  COMMAND make -C ${CMAKE_SOURCE_DIR} toitlsp
-)
+if (NOT ${TOIT_IS_CROSS})
+  set(TOITC "$<TARGET_FILE:toit.compile>")
+endif()
+
 
 add_custom_target(
   build_version_file
   COMMAND echo ${TOIT_GIT_VERSION} > "${CMAKE_BINARY_DIR}/sdk/VERSION"
 )
 
+add_custom_target(
+  build_snapshots
+)
+
 add_subdirectory(src)
+add_subdirectory(tools)
+
+set(GO_ENV "$ENV{GO_BUILD_FLAGS}")
+separate_arguments(GO_ENV)
+list(APPEND GO_ENV CGO_ENABLED=1 GODEBUG=netdns=go "GOOS=${GOOS}" "GOARCH=${GOARCH}")
+
+set(GO_LINK_FLAGS "$ENV{GO_LINK_FLAGS} -X main.date=${BUILD_DATE}")
+
+set(TOITLSP_BIN "${CMAKE_BINARY_DIR}/sdk/bin/toit.lsp${CMAKE_EXECUTABLE_SUFFIX}")
+add_custom_command(
+  OUTPUT "${TOITLSP_BIN}"
+  COMMAND "${CMAKE_COMMAND}" -E env ${GO_ENV} go build -ldflags "${GO_LINK_FLAGS}" -tags "netgo osusergo" -o "${TOITLSP_BIN}"
+  WORKING_DIRECTORY ${TOIT_SDK_SOURCE_DIR}/tools/toitlsp
+)
+
+set(TOITPKG_BIN "${CMAKE_BINARY_DIR}/sdk/bin/toit.pkg${CMAKE_EXECUTABLE_SUFFIX}")
+add_custom_command(
+  OUTPUT "${TOITPKG_BIN}"
+  COMMAND "${CMAKE_COMMAND}" -E env ${GO_ENV} go build -ldflags "${GO_LINK_FLAGS}" -tags "netgo osusergo" -o "${TOITPKG_BIN}"
+  WORKING_DIRECTORY ${TOIT_SDK_SOURCE_DIR}/tools/tpkg/cmd/toitpkg
+)
+
+add_custom_target(
+  build_go_tools
+  DEPENDS "${TOITLSP_BIN}" "${TOITPKG_BIN}"
+)
+add_dependencies(build_tools build_go_tools)
 
 enable_testing()
 add_subdirectory(tests)

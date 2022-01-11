@@ -135,7 +135,7 @@ fatal: remote error: want 7f8c86e501e690301630029fa9bae22424adf618 not valid
 Fetched in submodule path 'esp-idf/components/coap/libcoap/ext/tinydtls', but it did not contain 7f8c86e501e690301630029fa9bae22424adf618. Direct fetching of that commit failed.
 ```
 
-try following the steps outlined [here](https://github.com/toitlang/toit/issues/88). It is an issue in the upstream ESP-IDF repository 
+try following the steps outlined [here](https://github.com/toitlang/toit/issues/88). It is an issue in the upstream ESP-IDF repository
 caused by the `tinydtls` component having changed its remote URL.
 
 To use the [offical ESP-IDF](https://github.com/espressif/esp-idf), or [any other variation](https://github.com/espressif/esp-idf/network/members), make sure it is available in your file system and point IDF_PATH to its path instead before building.
@@ -146,7 +146,7 @@ export IDF_PATH=<A_DIFFERENT_ESP_IDF>
 
 ### ESP32 tools
 
-Install the ESP32 tools, if you want to build an image for an ESP32.
+If you want to build an image for the ESP32, install the ESP32 tools.
 
 On Linux:
 ``` sh
@@ -158,7 +158,7 @@ For other platforms, see [Espressif's documentation](https://docs.espressif.com/
 Remember to update your environment variables:
 
 ``` sh
-. $IDF_PATH/export.sh
+source $IDF_PATH/export.sh
 ```
 
 ## Build for host machine
@@ -168,7 +168,7 @@ Make sure the required build tools are installed as described in dependency sect
 Then run the following commands at the root of your checkout.
 
 ``` sh
-make tools
+make all
 ```
 
 ---

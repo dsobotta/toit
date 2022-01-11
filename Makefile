@@ -16,8 +16,6 @@
 .ONESHELL: # Run all lines of targets in one shell
 .SHELLFLAGS += -e
 
-BUILD_DATE = $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
-
 # Use 'make ESP32_ENTRY=examples/mandelbrot.toit esp32' to compile a different
 # example for the ESP32 firmware.
 ESP32_ENTRY=examples/hello.toit
@@ -32,50 +30,27 @@ export IDF_PATH ?= $(CURDIR)/third_party/esp-idf
 
 ifeq ($(OS),Windows_NT)
 	EXE_SUFFIX=".exe"
+	DETECTED_OS=$(OS)
 else
 	EXE_SUFFIX=
+	DETECTED_OS=$(shell uname)
 endif
 
-BIN_DIR = build/host/sdk/bin
-TOITPKG_BIN = $(BIN_DIR)/toit.pkg$(EXE_SUFFIX)
-TOITLSP_BIN = $(BIN_DIR)/toit.lsp$(EXE_SUFFIX)
-TOITVM_BIN = $(BIN_DIR)/toit.run$(EXE_SUFFIX)
-TOITC_BIN = $(BIN_DIR)/toit.compile$(EXE_SUFFIX)
-VERSION_FILE = build/host/sdk/VERSION
 CROSS_ARCH=
-
-# Note that the boot snapshot lives in the bin dir.
-TOIT_BOOT_SNAPSHOT = $(BIN_DIR)/run_boot.snapshot
-
-SNAPSHOT_DIR = build/host/sdk/snapshots
 
 prefix ?= /opt/toit-sdk
 
-GO_BUILD_FLAGS ?=
-ifeq ("$(GO_BUILD_FLAGS)", "")
-$(eval GO_BUILD_FLAGS=CGO_ENABLED=1 GODEBUG=netdns=go)
-else
-$(eval GO_BUILD_FLAGS=$(GO_BUILD_FLAGS) CGO_ENABLED=1 GODEBUG=netdns=go)
-endif
-
-GO_LINK_FLAGS ?=
-GO_LINK_FLAGS +=-X main.date=$(BUILD_DATE)
-
-TOITLSP_SOURCE := $(shell find ./tools/toitlsp/ -name '*.go')
-TOITPKG_VERSION := v0.0.0-20211126161923-c00da039da00
-
-TOOLS = $(TOITPKG_BIN) $(TOITLSP_BIN) $(TOITVM_BIN) $(TOITC_BIN) $(VERSION_FILE)
-SNAPSHOTS = $(SNAPSHOT_DIR)/system_message.snapshot $(SNAPSHOT_DIR)/snapshot_to_image.snapshot $(SNAPSHOT_DIR)/inject_config.snapshot
-
-
 # HOST
 .PHONY: all
-all: tools
-
-.PHONY: tools
-tools: check-env $(TOOLS) snapshots
+all: tools snapshots version-file
 
 check-env:
+ifndef IGNORE_SUBMODULE
+	@ if git submodule status | grep '^[-+]' ; then \
+		echo "Submodules not updated or initialized. Did you 'git submodule update --init --recursive'?"; \
+		exit 1; \
+	fi
+endif
 ifeq ("$(wildcard $(IDF_PATH)/components/mbedtls/mbedtls/LICENSE)","")
 ifeq ("$(IDF_PATH)", "$(CURDIR)/third_party/esp-idf")
 	$(error mbedtls sources are missing. Did you `git submodule update --init --recursive`?)
@@ -87,101 +62,101 @@ ifneq ("$(IDF_PATH)", "$(CURDIR)/third_party/esp-idf")
 	$(info -- Not using Toitware ESP-IDF fork.)
 endif
 
-.PHONY: toitpkg
-toitpkg: $(TOITPKG_BIN)
+build/host/CMakeCache.txt:
+	$(MAKE) rebuild-cmake
 
-$(TOITPKG_BIN):
-	GOBIN="$(CURDIR)"/$(dir $@) go install github.com/toitlang/tpkg/cmd/toitpkg@$(TOITPKG_VERSION)
-	mv "$(CURDIR)"/$(dir $@)/toitpkg "$(CURDIR)"/$@
-
-.PHONY: toitlsp
-toitlsp: $(TOITLSP_BIN)
-
-$(TOITLSP_BIN): $(TOITLSP_SOURCE)
-	cd tools/toitlsp; $(GO_BUILD_FLAGS) go build  -ldflags "$(GO_LINK_FLAGS)" -tags 'netgo osusergo' -o "$(CURDIR)"/$@ .
-
-# We don't track dependencies in the Makefile, so we always have to call out to ninja.
-.PHONY: $(TOITVM_BIN) $(TOITC_BIN) $(TOIT_BOOT_SNAPSHOT)
-$(TOITVM_BIN) $(TOITC_BIN) $(TOIT_BOOT_SNAPSHOT): build/host/CMakeCache.txt
-	(cd build/host && ninja build_tools)
-
-build/host/CMakeCache.txt: build/host/
+.PHONY: rebuild-cmake
+rebuild-cmake:
+	mkdir -p build/host
 	(cd build/host && cmake ../.. -G Ninja -DCMAKE_BUILD_TYPE=Release)
 
-build/host/:
-	mkdir -p $@
-
-.PHONY: $(VERSION_FILE)
-$(VERSION_FILE):
-	(cd build/host && ninja build_version_file)
+.PHONY: tools
+tools: check-env build/host/CMakeCache.txt
+	(cd build/host && ninja build_tools)
 
 .PHONY: snapshots
-snapshots: $(SNAPSHOTS)
+snapshots: tools
+	(cd build/host && ninja build_snapshots)
 
-$(SNAPSHOT_DIR)/snapshot_to_image.snapshot: tools/snapshot_to_image.toit $(TOITC_BIN) $(SNAPSHOT_DIR)
-	$(TOITC_BIN) -w $@ $<
-
-$(SNAPSHOT_DIR)/system_message.snapshot: tools/system_message.toit $(TOITC_BIN) $(SNAPSHOT_DIR)
-	$(TOITC_BIN) -w $@ $<
-
-$(SNAPSHOT_DIR)/inject_config.snapshot: tools/inject_config.toit $(TOITC_BIN) $(SNAPSHOT_DIR)
-	$(TOITC_BIN) -w $@ $<
-
-$(SNAPSHOT_DIR):
-	mkdir -p $@
+.PHONY: version-file
+version-file: build/host/CMakeCache.txt
+	$(MAKE) rebuild-cmake
+	(cd build/host && ninja build_version_file)
 
 
 # CROSS-COMPILE
-.PHONY: tools-cross
-tools-cross: check-env check-env-cross tools build/$(CROSS_ARCH)/sdk/bin/toit.run build/$(CROSS_ARCH)/sdk/bin/toit.compile build/$(CROSS_ARCH)/sdk/bin/run_boot.snapshot
+.PHONY: all-cross
+all-cross: tools-cross snapshots-cross version-file-cross
 
 check-env-cross:
 ifndef CROSS_ARCH
-	$(error invalid must specify a cross-compilation targt with CROSS_ARCH.  ie: make tools-cross CROSS_ARCH=riscv64)
+	$(error invalid must specify a cross-compilation targt with CROSS_ARCH.  For example: make all-cross CROSS_ARCH=riscv64)
 endif
 ifeq ("$(wildcard ./toolchains/$(CROSS_ARCH).cmake)","")
 	$(error invalid cross-compile target '$(CROSS_ARCH)')
 endif
 
-.PHONY: build/$(CROSS_ARCH)/sdk/bin/toit.run build/$(CROSS_ARCH)/sdk/bin/toit.compile
-build/$(CROSS_ARCH)/sdk/bin/toit.run build/$(CROSS_ARCH)/sdk/bin/toit.compile: build/$(CROSS_ARCH)/CMakeCache.txt
+build/$(CROSS_ARCH)/CMakeCache.txt:
+	$(MAKE) rebuild-cross-cmake
+
+.PHONY: rebuild-cross-cmake
+rebuild-cross-cmake:
+	mkdir -p build/$(CROSS_ARCH)
+	(cd build/$(CROSS_ARCH) && cmake ../../ -G Ninja -DTOITC=$(CURDIR)/build/host/sdk/bin/toit.compile -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=../../toolchains/$(CROSS_ARCH).cmake --no-warn-unused-cli)
+
+.PHONY: tools-cross
+tools-cross: check-env-cross tools build/$(CROSS_ARCH)/CMakeCache.txt
 	(cd build/$(CROSS_ARCH) && ninja build_tools)
 
-build/$(CROSS_ARCH)/CMakeCache.txt: build/$(CROSS_ARCH)/
-	(cd build/$(CROSS_ARCH) && cmake ../../ -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=../../toolchains/$(CROSS_ARCH).cmake --no-warn-unused-cli)
+.PHONY: snapshots-cross
+snapshots-cross: tools build/$(CROSS_ARCH)/CMakeCache.txt
+	(cd build/$(CROSS_ARCH) && ninja build_snapshots)
 
-build/$(CROSS_ARCH)/:
-	mkdir -p $@
-
-build/$(CROSS_ARCH)/sdk/bin/run_boot.snapshot:
-	(cp $(TOIT_BOOT_SNAPSHOT) build/$(CROSS_ARCH)/sdk/bin/)
+.PHONY: version-file-cross
+version-file-cross: build/$(CROSS_ARCH)/CMakeCache.txt
+	$(MAKE) rebuild-cross-cmake
+	(cd build/host && ninja build_version_file)
 
 
 # ESP32 VARIANTS
+SNAPSHOT_DIR = build/host/sdk/snapshots
+BIN_DIR = build/host/sdk/bin
+TOITVM_BIN = $(BIN_DIR)/toit.run$(EXE_SUFFIX)
+TOITC_BIN = $(BIN_DIR)/toit.compile$(EXE_SUFFIX)
+
+ifeq ($(DETECTED_OS), Linux)
+	NUM_CPU := $(shell nproc)
+else ifeq ($(DETECTED_OS), Darwin)
+	NUM_CPU := $(shell sysctl -n hw.ncpu)
+else
+	# Just assume two cores.
+	NUM_CPU := 2
+endif
+
 .PHONY: esp32
 esp32: check-env build/$(ESP32_CHIP)/toit.bin
 
-build/$(ESP32_CHIP)/toit.bin build/$(ESP32_CHIP)/toit.elf: build/$(ESP32_CHIP)/lib/libtoit_image.a build/config.json
-	make -C toolchains/$(ESP32_CHIP)/
+build/$(ESP32_CHIP)/toit.bin build/$(ESP32_CHIP)/toit.elf: tools snapshots build/$(ESP32_CHIP)/lib/libtoit_image.a build/config.json
+	$(MAKE) -j $(NUM_CPU) -C toolchains/$(ESP32_CHIP)/
 	$(TOITVM_BIN) tools/inject_config.toit build/config.json build/$(ESP32_CHIP)/toit.bin
 
 build/$(ESP32_CHIP)/lib/libtoit_image.a: build/$(ESP32_CHIP)/$(ESP32_CHIP).image.s build/$(ESP32_CHIP)/CMakeCache.txt build/$(ESP32_CHIP)/include/sdkconfig.h
 	(cd build/$(ESP32_CHIP) && ninja toit_image)
 
-build/$(ESP32_CHIP)/$(ESP32_CHIP).image.s: build/$(ESP32_CHIP)/ build/snapshot $(TOITVM_BIN) $(SNAPSHOT_DIR)/snapshot_to_image.snapshot
+build/$(ESP32_CHIP)/$(ESP32_CHIP).image.s: tools snapshots build/snapshot
+	mkdir -p build/$(ESP32_CHIP)
 	$(TOITVM_BIN) $(SNAPSHOT_DIR)/snapshot_to_image.snapshot build/snapshot $@
 
 build/snapshot: $(TOITC_BIN) $(ESP32_ENTRY)
 	$(TOITC_BIN) -w $@ $(ESP32_ENTRY)
 
-build/$(ESP32_CHIP)/CMakeCache.txt: build/$(ESP32_CHIP)/
-	(cd build/$(ESP32_CHIP) && IMAGE=build/$(ESP32_CHIP)/$(ESP32_CHIP).image.s cmake ../../ -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=../../toolchains/$(ESP32_CHIP)/$(ESP32_CHIP).cmake --no-warn-unused-cli)
+build/$(ESP32_CHIP)/CMakeCache.txt:
+	mkdir -p build/$(ESP32_CHIP)
+	(cd build/$(ESP32_CHIP) && IMAGE=build/$(ESP32_CHIP)/$(ESP32_CHIP).image.s cmake ../../ -G Ninja -DTOITC=$(CURDIR)/build/host/sdk/bin/toit.compile -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=../../toolchains/$(ESP32_CHIP)/$(ESP32_CHIP).cmake --no-warn-unused-cli)
 
-build/$(ESP32_CHIP)/:
-	mkdir -p $@
-
-build/$(ESP32_CHIP)/include/sdkconfig.h: build/$(ESP32_CHIP)/
-	make -C toolchains/$(ESP32_CHIP) -s "$(CURDIR)"/$@
+build/$(ESP32_CHIP)/include/sdkconfig.h:
+	mkdir -p build/$(ESP32_CHIP)
+	$(MAKE) -C toolchains/$(ESP32_CHIP) -s "$(CURDIR)"/$@
 
 .PHONY: build/config.json
 build/config.json:
@@ -206,15 +181,20 @@ clean:
 	rm -rf build/
 
 .PHONY: install-sdk install
-install-sdk: $(TOOLS) $(SNAPSHOTS)
-	install -D --target-directory="$(DESTDIR)$(prefix)"/bin $(TOOLS)
-	install -m 644 -D --target-directory="$(DESTDIR)$(prefix)"/bin $(TOIT_BOOT_SNAPSHOT)
-	cp -R "$(CURDIR)"/lib "$(DESTDIR)$(prefix)"/lib
+install-sdk: all
+	install -D --target-directory="$(DESTDIR)$(prefix)"/bin "$(CURDIR)"/build/host/sdk/bin/*
+	chmod 644 "$(DESTDIR)$(prefix)"/bin/*.snapshot
+	mkdir -p "$(DESTDIR)$(prefix)"/lib
+	cp -R "$(CURDIR)"/lib/* "$(DESTDIR)$(prefix)"/lib
 	find "$(DESTDIR)$(prefix)"/lib -type f -exec chmod 644 {} \;
-	install -m 644 -D --target-directory="$(DESTDIR)$(prefix)"/snapshots $(SNAPSHOTS)
+	mkdir -p "$(DESTDIR)$(prefix)"/snapshots
+	cp "$(CURDIR)"/build/host/sdk/snapshots/* "$(DESTDIR)$(prefix)"/snapshots
+	find "$(DESTDIR)$(prefix)"/snapshots -type f -exec chmod 644 {} \;
 
 install: install-sdk
 
+
+# TESTS (host)
 .PHONY: test
 test:
 	(cd build/host && ninja check_slow check_fuzzer_lib)
@@ -226,12 +206,11 @@ update-gold:
 
 .PHONY: test-health
 test-health:
-	(cd build/host && ninja generate_health_sources)
-	$(MAKE) build/host/CMakeCache.txt
+	$(MAKE) rebuild-cmake
 	(cd build/host && ninja check_health)
 
 .PHONY: update-health-gold
 update-health-gold:
-	(cd build/host && ninja generate_health_sources)
-	$(MAKE) build/host/CMakeCache.txt
+	$(MAKE) rebuild-cmake
+	(cd build/host && ninja clear_health_gold)
 	(cd build/host && ninja update_health_gold)

@@ -4,3 +4,6 @@
 	url = https://github.com/espressif/esp-idf.git
 	branch = origin/release/v4.4
 	ignore = untracked
+[submodule "tools/tpkg"]
+	path = tools/tpkg
+	url = https://github.com/toitlang/tpkg.git

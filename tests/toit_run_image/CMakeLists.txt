@@ -32,15 +32,16 @@ foreach(file ${TOIT_RUN_IMAGE_TESTS})
   set(dep ${TOIT_RUN_IMAGE_TEST_DIR}/${test_name}_input.dep)
 
   ADD_TOIT_TARGET(
-    ${input}
-    ${snap}
-    ${dep}
+    "${input}"
+    "${snap}"
+    "${dep}"
     "")
 
   add_custom_command(
-    OUTPUT ${image}
-    DEPENDS ${snap}
-    COMMAND ASAN_OPTIONS=detect_leaks=false $<TARGET_FILE:toit.compile> -i ${image} ${snap}
+    OUTPUT "${image}"
+    DEPENDS "${snap}"
+    COMMAND "${CMAKE_COMMAND}" -E env ASAN_OPTIONS=detect_leaks=false
+        $<TARGET_FILE:toit.compile> -i "${image}" "${snap}"
   )
 
   set(build_img tests-toit_run_image-build_${test_name}_input)
@@ -56,4 +57,9 @@ foreach(file ${TOIT_RUN_IMAGE_TESTS})
     COMMAND $<TARGET_FILE:toit.run> ${file} $<TARGET_FILE:toit_run_image> ${image}
     )
   set_tests_properties(${test_name} PROPERTIES TIMEOUT 40)
+endforeach()
+
+include(fail.cmake)
+foreach(test ${TOIT_FAILING_TESTS})
+  set_tests_properties(${test} PROPERTIES WILL_FAIL TRUE)
 endforeach()

@@ -14,15 +14,6 @@ jobs:
         # windows-2022, as it's currently later than windows-latest.
         container: [ ubuntu-latest, macos-10.15, windows-2022 ]
         shard: [1, 2, 3, 4, 5]
-        exclude: # We don't run tests on Windows yet. Exclude all but the first shard.
-          - container: windows-2022
-            shard: 2
-          - container: windows-2022
-            shard: 3
-          - container: windows-2022
-            shard: 4
-          - container: windows-2022
-            shard: 5
 
     runs-on: ${{ matrix.container }}
 
@@ -38,7 +29,7 @@ jobs:
             echo ::set-output name=total_shards::5
           elif [ "$RUNNER_OS" == "Windows" ]; then
             echo ::set-output name=artifact::toit-windows.tar.gz
-            echo ::set-output name=total_shards::1
+            echo ::set-output name=total_shards::5
           else
             echo "UNSUPPORTED RUNNER: $RUNNER_OS"
             exit 1
@@ -52,12 +43,17 @@ jobs:
         run: |
           git fetch --tags
 
-      - name: Initialize mbed-tls submodule
-        # We only need the mbedtls submodule for building.
+      # We only need the tpkg and mbedtls submodule for building.
+      - name: Initialize mbedtls submodule
         run: |
           cd third_party/esp-idf
           git submodule update --init .
           git submodule update --init components/mbedtls
+
+      - name: Initialize tpkg submodule
+        run: |
+          cd tools/tpkg
+          git submodule update --init .
 
       # Use Go 1.17
       - name: Switch to Go 1.17
@@ -108,7 +104,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install ninja-build ccache
+          sudo apt-get install ninja-build ccache gcc-multilib g++-multilib
           ninja --version
           cmake --version
           gcc --version
@@ -137,12 +133,15 @@ jobs:
           CCACHE_MAXSIZE: 400M
           SHARD_START: ${{ matrix.shard }}
           SHARD_STRIDE: ${{ steps.constants.outputs.total_shards }}
+        shell: bash
         run: |
-          make tools
+          make all
+          if [ "$RUNNER_OS" == "Linux" ]; then
+            make CROSS_ARCH=host32 all-cross
+          fi
 
       # Test.
       - name: test
-        if: runner.os != 'Windows'
         env:
           IDF_PATH: ${{ github.workspace }}/third_party/esp-idf
           CCACHE_DIR: ${{ github.workspace }}/.ccache
@@ -152,9 +151,14 @@ jobs:
           CCACHE_MAXSIZE: 400M
           SHARD_START: ${{ matrix.shard }}
           SHARD_STRIDE: ${{ steps.constants.outputs.total_shards }}
+        shell: bash
         run: |
           make test
           make test-health
+          if [ "$RUNNER_OS" == "Linux" ]; then
+            cd build/host32
+            ninja check
+          fi
 
       - name: Pack artifacts
         if: matrix.shard == 1
@@ -199,6 +203,34 @@ jobs:
           git submodule sync --recursive
           git submodule update --init --recursive -j 2
 
+      # Use Go 1.17
+      - name: Switch to Go 1.17
+        run:
+          echo "$GOROOT_1_17_X64"/bin >> $GITHUB_PATH
+
+      # Get values for cache paths to be used in later steps
+      - name: Get Go paths
+        id: go-cache-paths
+        run: |
+          echo "::set-output name=go-build::$(go env GOCACHE)"
+          echo "::set-output name=go-mod::$(go env GOMODCACHE)"
+
+      # Cache go build cache, used to speedup go test
+      - name: Go Build Cache
+        uses: actions/cache@v2
+        with:
+          path: ${{ steps.go-cache-paths.outputs.go-build }}
+          key: ${{ runner.os }}-go-build-${{ hashFiles('**/go.sum') }}
+          restore-keys: ${{ runner.os }}-go-build-
+
+      # Cache go mod cache, used to speedup builds
+      - name: Go Mod Cache
+        uses: actions/cache@v2
+        with:
+          path: ${{ steps.go-cache-paths.outputs.go-mod }}
+          key: ${{ runner.os }}-go-mod-${{ hashFiles('**/go.sum') }}
+          restore-keys: ${{ runner.os }}-go-mod-
+
       # We create a new id every second.
       # The 'restore-keys' below will make sure that we continue using earlier versions.
       - name: Create timestamp
@@ -223,6 +255,13 @@ jobs:
           cmake --version
           gcc --version
 
+      - name: Ccache symlinks
+        run: |
+          mkdir ccache_interceptors
+          cd ccache_interceptors
+          ln -s $(command -v ccache) xtensa-esp32-elf-gcc
+          ln -s $(command -v ccache) xtensa-esp32-elf-g++
+
       - name: Install ESP32 tools
         run: |
           third_party/esp-idf/install.sh
@@ -239,4 +278,6 @@ jobs:
           CCACHE_MAXSIZE: 400M
         run: |
           source third_party/esp-idf/export.sh
+          # Make sure the ccache interceptors are before any other path.
+          export PATH="$PWD/ccache_interceptors":$PATH
           make esp32
