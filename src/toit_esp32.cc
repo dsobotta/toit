@@ -94,8 +94,19 @@ const Program* setup_program(bool supports_ota) {
 }
 
 static void start() {
+
+  printf("toit::start()\n");
+  //return;
+
   RtcMemory::set_up();
+ 
+  printf("toit::start() post rtc memory setup\n");
+  return;
+
   OS::set_up();
+
+  printf("toit::start() post OS::set_up()\n");
+  return;
 
   // The Toit firmware only supports OTAs if we can find the OTA app partition.
   bool supports_ota = NULL != esp_partition_find_first(
@@ -105,7 +116,8 @@ static void start() {
 
   const Program* program = setup_program(supports_ota);
   Scheduler::ExitState exit_state;
-  { VM vm;
+  { 
+    VM vm;
     vm.load_platform_event_sources();
     int group_id = vm.scheduler()->next_group_id();
     exit_state = vm.scheduler()->run_boot_program(const_cast<Program*>(program), null, group_id);
@@ -136,7 +148,9 @@ static void start() {
     }
 
     case Scheduler::EXIT_ERROR:
-#ifndef CONFIG_IDF_TARGET_ESP32C3
+#ifdef CONFIG_IDF_TARGET_ESP32C3
+      ets_printf("Toit VM exited with error, restarting.");
+#else
       ESP_LOGE("Toit", "VM exited with error, restarting.");
 #endif
       // 1s sleep before restart, after an error.
@@ -144,7 +158,9 @@ static void start() {
       break;
 
     case Scheduler::EXIT_DONE:
-#ifndef CONFIG_IDF_TARGET_ESP32C3
+#ifdef CONFIG_IDF_TARGET_ESP32C3
+      ets_printf("Toit VM exited, going into deep sleep.");
+#else
       ESP_LOGE("Toit", "VM exited, going into deep sleep.");
 #endif
       break;

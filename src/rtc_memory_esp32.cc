@@ -113,7 +113,11 @@ static void update_rtc_checksum() {
 }
 
 static bool is_rtc_valid() {
+#ifdef CONFIG_IDF_TARGET_ESP32C3
+  return true;
+#else
   return rtc_checksum == compute_rtc_checksum();
+#endif
 }
 
 static void reset_rtc(const char* reason) {
@@ -158,8 +162,15 @@ extern "C" void IRAM_ATTR start_cpu0() {
 namespace toit {
 
 void RtcMemory::set_up() {
-  // If the RTC memory was already reset, skip this step.
-  if (reset_after_boot) return;
+
+	printf("RtcMemory::set_up()\n");
+	return;
+
+// If the RTC memory was already reset, skip this step.
+  if (reset_after_boot) {
+	  printf("RtcMemory::set_up() -- reset_after_boot = true\n");
+	  return;
+  }
 
   switch (esp_reset_reason()) {
     case ESP_RST_SW:
